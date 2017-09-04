@@ -5,8 +5,6 @@ Self-Driving Car Engineer Nanodegree Program
 
 ## Model
 
-The project uses MPC controller to control the vehicle on the track. The model of MPC controller consist of current state and several predicted ones. Based on this data the model tries to fit the model to reduce the cost and provide the best trajectory.
-
 The state includes: position `(x, y)`, velocity `(v)`, acceleration `(a)`, vehicle angle relative to map X axis `(psi)`, vehicle steering angle `(delta)`, cross-track error `(cte)` and angle of the vehicle relative to track direction `(epsi)`.
 
 The actual state for the predicted steps is depends on reference state and the actuators applied. Actuators(acceleration, steering) adjustment allows to improve the model cost and result in more optimized trajectory. The implementation based on the formulas from the lesson can be seen in the lines 52-93.
