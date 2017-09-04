@@ -6,7 +6,7 @@
 using CppAD::AD;
 
 size_t N = 10;
-double dt = 0.18;
+double dt = 0.15;
 
 const double Lf = 2.67;
 double ref_v = 70;
@@ -22,14 +22,6 @@ size_t cte_start = v_start + N;
 size_t epsi_start = cte_start + N;
 size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
-
-AD<double> polyeval(Eigen::VectorXd coeffs, AD<double> x) {
-  AD<double> result = 0.0;
-  for (int i = 0; i < coeffs.size(); i++) {
-    result += coeffs[i] * CppAD::pow(x, i);
-  }
-  return result;
-}
 
 class FG_eval {
 public:
@@ -68,27 +60,28 @@ public:
         AD<double> y0 = vars[y_start + t - 1];
         AD<double> psi0 = vars[psi_start + t - 1];
         AD<double> v0 = vars[v_start + t - 1];
-        AD<double> delta0 = vars[delta_start + t - 1];
-        AD<double> a0 = vars[a_start + t - 1];
         AD<double> cte0 = vars[cte_start + t - 1];
         AD<double> epsi0 = vars[epsi_start + t - 1];
 
-        AD<double> y_fit = polyeval(coeffs, x0);
-        AD<double> epsi = CppAD::atan(coeffs[1] + coeffs[2] * 2 * x0 + coeffs[3] * 3 * pow(x0, 2));
+        AD<double> delta0 = vars[delta_start + t - 1];
+        AD<double> a0 = vars[a_start + t - 1];
+
+        AD<double> y_fit = coeffs[3] * x0 * x0 * x0 + coeffs[2] * x0 * x0 + coeffs[1] * x0 + coeffs[0];
+        AD<double> epsi = CppAD::atan((3 * coeffs[3] * (x0 * x0)) + (2 * coeffs[2] * x0) + coeffs[1]);
 
         // Define cost for the car
-        fg[0] += CppAD::pow(cte0, 2) * 3000;
-        fg[0] += CppAD::pow(epsi0, 2) * 750;
-        fg[0] += CppAD::pow(ref_v - v0, 2) * 0.7;
-        fg[0] += CppAD::pow(delta0, 2) * 50;
-        fg[0] += CppAD::pow(a0, 2) * 30;
+        fg[0] += CppAD::pow(cte0, 2) * 2500;
+        fg[0] += CppAD::pow(epsi0, 2) * 1500;
+        fg[0] += CppAD::pow(ref_v - v0, 2);
+        fg[0] += CppAD::pow(delta0, 2) * 30;
+        fg[0] += CppAD::pow(a0, 2) * 60;
 
 
         if (t < N - 1) {
           AD<double> delta1 = vars[delta_start + t];
           AD<double> a1 = vars[a_start + t];
-          fg[0] += CppAD::pow(delta1 - delta0, 2) * 50;
-          fg[0] += CppAD::pow(a1 - a0, 2) * 30;
+          fg[0] += CppAD::pow(delta1 - delta0, 2) * 300;
+          fg[0] += CppAD::pow(a1 - a0, 2) * 100;
         }
 
         // Setup next state constraints
@@ -97,7 +90,7 @@ public:
         fg[1 + psi_start + t]  = psi1  - (psi0 + (v0 / Lf) * delta0 * dt);
         fg[1 + v_start + t]    = v1    - (v0 + a0 * dt);
         fg[1 + cte_start + t]  = cte1  - ((y_fit - y0) + (v0 * CppAD::sin(epsi0) * dt));
-        fg[1 + epsi_start + t] = epsi1 - (epsi0 - epsi + (v0 / Lf) * delta0 * dt);
+        fg[1 + epsi_start + t] = epsi1 - (psi0 - epsi + (v0 / Lf) * delta0 * dt);
       }
     }
 };
@@ -107,8 +100,8 @@ public:
 //
 
 MPC::MPC() {
-  ptsx = std::vector<double>(4);
-  ptsy = std::vector<double>(4);
+  ptsx = std::vector<double>(N);
+  ptsy = std::vector<double>(N);
 }
 MPC::~MPC() {}
 
@@ -200,6 +193,7 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, double tar
   options += "Integer print_level  0\n";
   options += "Sparse  true        forward\n";
   options += "Sparse  true        reverse\n";
+  options += "Numeric max_cpu_time          0.5\n";
 
   // place to return solution
   CppAD::ipopt::solve_result<Dvector> solution;
@@ -216,7 +210,7 @@ vector<double> MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs, double tar
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < N; i++) {
     ptsx[i] = solution.x[x_start + i];
     ptsy[i] = solution.x[y_start + i];
   }

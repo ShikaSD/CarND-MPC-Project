@@ -82,13 +82,19 @@ int main() {
   // MPC is initialized here!
   MPC mpc;
 
-  h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  vector<double> pointsx(20);
+  vector<double> pointsy(20);
+
+  double a = 0;
+  double delta = 1e-6;
+
+  h.onMessage([&mpc, &a, &delta, &pointsx, &pointsy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    //cout << sdata << endl;
+//    cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -103,27 +109,26 @@ int main() {
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
 
-          Eigen::VectorXd ptx(ptsx.size());
-          Eigen::VectorXd pty(ptsy.size());
+          // Fix the issues with delay
+          double dt = 0.1;
+          px += v * cos(psi) * dt;
+          py += v * sin(psi) * dt;
+          psi += (v / 2.67) * delta * dt;
+          v += a * dt;
 
           pts_transform(ptsx, ptsy, px, py, psi);
 
-          for (int i = 0; i < ptsx.size(); i++) {
-            ptx(i) = ptsx[i];
-            pty(i) = ptsy[i];
-          }
-
-          auto coeffs = polyfit(ptx, pty, 3);
-          double epsi = atan(coeffs[1]);
-          double cte = polyeval(coeffs, 1);
+          auto coeffs = polyfit(Eigen::VectorXd::Map(ptsx.data(), ptsx.size()), Eigen::VectorXd::Map(ptsy.data(), ptsy.size()), 3);
+          double epsi = -atan(coeffs[1]);
+          double cte = polyeval(coeffs, 0);
 
           Eigen::VectorXd state(6);
           state << 0, 0, 0, v, cte, epsi;
 
           auto vars = mpc.Solve(state, coeffs, ptsx.back(), ptsy.back());
 
-          double steer_value = vars[0];
-          double throttle_value = vars[1];
+          double steer_value = delta = vars[0];
+          double throttle_value = a = vars[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -141,9 +146,14 @@ int main() {
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 
+          for (int i = 0; i < 20; i++) {
+            pointsx[i] = i * 2;
+            pointsy[i] = polyeval(coeffs, pointsx[i]);
+          }
+
           //Display the waypoints/reference line
-          vector<double> next_x_vals = ptsx;
-          vector<double> next_y_vals = ptsy;
+          vector<double> next_x_vals = pointsx;
+          vector<double> next_y_vals = pointsy;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
